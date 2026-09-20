@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Catálogo</title>
+  <meta name="description" content="Guardá enlaces de redes sociales organizados por temática" />
+  <meta name="theme-color" content="#4F46E5" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Catálogo" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Catálogo</h1>
+  </header>
+
+  <main class="app-main">
+    <div class="search-wrap">
+      <input
+        id="search"
+        type="search"
+        placeholder="Buscar por tema, plataforma, descripción o URL..."
+        autocomplete="off"
+      />
+    </div>
+
+    <div id="list" class="list"></div>
+    <p id="empty-state" class="empty-state" hidden></p>
+  </main>
+
+  <button id="fab-add" class="fab" type="button" aria-label="Agregar enlace">+</button>
+
+  <dialog id="modal" class="modal">
+    <form id="link-form" class="modal-form">
+      <h2 id="form-title">Nuevo enlace</h2>
+
+      <label for="field-url">URL</label>
+      <input id="field-url" name="url" type="url" placeholder="https://..." required autocomplete="off" />
+      <span id="platform-badge" class="platform-badge">🔗 Otro</span>
+
+      <label for="field-tema">Tema / Categoría</label>
+      <input id="field-tema" name="tema" type="text" placeholder="Ej: Recetas, Fitness, Programación" autocomplete="off" />
+
+      <label for="field-descripcion">Descripción</label>
+      <textarea id="field-descripcion" name="descripcion" rows="3" placeholder="Notas opcionales..."></textarea>
+
+      <div class="modal-actions">
+        <button id="delete-btn" class="btn btn-danger" type="button" hidden>Eliminar</button>
+        <button id="cancel-btn" class="btn btn-secondary" type="button">Cancelar</button>
+        <button class="btn btn-primary" type="submit">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/db.js"></script>
+  <script src="js/platform.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
