@@ -1,7 +1,10 @@
-// Wrapper simple sobre IndexedDB para guardar los enlaces del catálogo.
+// Wrapper simple sobre IndexedDB: enlaces guardados + categorías.
 const DB_NAME = 'catalogo-db';
-const DB_VERSION = 1;
-const STORE = 'links';
+const DB_VERSION = 2;
+const STORE_LINKS = 'links';
+const STORE_CATEGORIES = 'categories';
+
+const DEFAULT_CATEGORIES = ['Recetas', 'Cerámica', 'Otras'];
 
 let dbPromise = null;
 
@@ -12,11 +15,35 @@ function openDB() {
 
     req.onupgradeneeded = (event) => {
       const db = event.target.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
-        store.createIndex('tema', 'tema', { unique: false });
-        store.createIndex('plataforma', 'plataforma', { unique: false });
-        store.createIndex('createdAt', 'createdAt', { unique: false });
+      const tx = event.target.transaction;
+
+      let linkStore;
+      if (!db.objectStoreNames.contains(STORE_LINKS)) {
+        linkStore = db.createObjectStore(STORE_LINKS, { keyPath: 'id', autoIncrement: true });
+        linkStore.createIndex('tema', 'tema', { unique: false });
+        linkStore.createIndex('plataforma', 'plataforma', { unique: false });
+        linkStore.createIndex('createdAt', 'createdAt', { unique: false });
+      } else {
+        linkStore = tx.objectStore(STORE_LINKS);
+      }
+
+      if (!db.objectStoreNames.contains(STORE_CATEGORIES)) {
+        const catStore = db.createObjectStore(STORE_CATEGORIES, { keyPath: 'id', autoIncrement: true });
+        catStore.createIndex('nombre', 'nombre', { unique: true });
+
+        // Primera instalación: sembramos algunas categorías de ejemplo.
+        // Si ya había enlaces guardados (upgrade desde v1), en vez de eso
+        // reconstruimos las categorías a partir de los temas existentes.
+        const getAllReq = linkStore.getAll();
+        getAllReq.onsuccess = () => {
+          const existingLinks = getAllReq.result || [];
+          const names = existingLinks.length
+            ? [...new Set(existingLinks.map((l) => l.tema).filter(Boolean))]
+            : DEFAULT_CATEGORIES;
+          for (const nombre of names) {
+            catStore.add({ nombre, createdAt: Date.now() });
+          }
+        };
       }
     };
 
@@ -29,8 +56,8 @@ function openDB() {
 async function addLink(link) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    const store = tx.objectStore(STORE);
+    const tx = db.transaction(STORE_LINKS, 'readwrite');
+    const store = tx.objectStore(STORE_LINKS);
     const record = {
       url: link.url,
       plataforma: link.plataforma,
@@ -47,8 +74,8 @@ async function addLink(link) {
 async function updateLink(id, changes) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    const store = tx.objectStore(STORE);
+    const tx = db.transaction(STORE_LINKS, 'readwrite');
+    const store = tx.objectStore(STORE_LINKS);
     const getReq = store.get(id);
     getReq.onsuccess = () => {
       const existing = getReq.result;
@@ -68,8 +95,8 @@ async function updateLink(id, changes) {
 async function deleteLink(id) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    const req = tx.objectStore(STORE).delete(id);
+    const tx = db.transaction(STORE_LINKS, 'readwrite');
+    const req = tx.objectStore(STORE_LINKS).delete(id);
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
@@ -78,8 +105,8 @@ async function deleteLink(id) {
 async function getAllLinks() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).getAll();
+    const tx = db.transaction(STORE_LINKS, 'readonly');
+    const req = tx.objectStore(STORE_LINKS).getAll();
     req.onsuccess = () => {
       const items = req.result.sort((a, b) => b.createdAt - a.createdAt);
       resolve(items);
@@ -88,4 +115,43 @@ async function getAllLinks() {
   });
 }
 
-window.CatalogoDB = { addLink, updateLink, deleteLink, getAllLinks };
+async function getAllCategories() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_CATEGORIES, 'readonly');
+    const req = tx.objectStore(STORE_CATEGORIES).getAll();
+    req.onsuccess = () => {
+      const items = (req.result || []).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+      resolve(items);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Crea la categoría si no existe todavía (comparación sin distinguir mayúsculas).
+// Devuelve siempre el nombre "canónico" ya guardado para esa categoría.
+async function ensureCategory(nombre) {
+  const clean = (nombre || '').trim();
+  if (!clean) return null;
+
+  const existing = await getAllCategories();
+  const match = existing.find((c) => c.nombre.toLowerCase() === clean.toLowerCase());
+  if (match) return match.nombre;
+
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_CATEGORIES, 'readwrite');
+    const req = tx.objectStore(STORE_CATEGORIES).add({ nombre: clean, createdAt: Date.now() });
+    req.onsuccess = () => resolve(clean);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+window.CatalogoDB = {
+  addLink,
+  updateLink,
+  deleteLink,
+  getAllLinks,
+  getAllCategories,
+  ensureCategory,
+};

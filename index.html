@@ -19,6 +19,8 @@
     <h1>Catálogo</h1>
   </header>
 
+  <div id="error-banner" class="error-banner" hidden></div>
+
   <main class="app-main">
     <div class="search-wrap">
       <input
@@ -29,33 +31,38 @@
       />
     </div>
 
+    <div id="category-chips" class="category-chips"></div>
+
     <div id="list" class="list"></div>
     <p id="empty-state" class="empty-state" hidden></p>
   </main>
 
   <button id="fab-add" class="fab" type="button" aria-label="Agregar enlace">+</button>
 
-  <dialog id="modal" class="modal">
-    <form id="link-form" class="modal-form">
-      <h2 id="form-title">Nuevo enlace</h2>
+  <div id="modal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
+      <form id="link-form" class="modal-form">
+        <h2 id="form-title">Nuevo enlace</h2>
 
-      <label for="field-url">URL</label>
-      <input id="field-url" name="url" type="url" placeholder="https://..." required autocomplete="off" />
-      <span id="platform-badge" class="platform-badge">🔗 Otro</span>
+        <label for="field-url">URL</label>
+        <input id="field-url" name="url" type="url" placeholder="https://..." required autocomplete="off" />
+        <span id="platform-badge" class="platform-badge">🔗 Otro</span>
 
-      <label for="field-tema">Tema / Categoría</label>
-      <input id="field-tema" name="tema" type="text" placeholder="Ej: Recetas, Fitness, Programación" autocomplete="off" />
+        <label for="field-tema">Tema / Categoría</label>
+        <select id="field-tema-select"></select>
+        <input id="field-tema-new" type="text" placeholder="Nombre de la nueva categoría" autocomplete="off" hidden />
 
-      <label for="field-descripcion">Descripción</label>
-      <textarea id="field-descripcion" name="descripcion" rows="3" placeholder="Notas opcionales..."></textarea>
+        <label for="field-descripcion">Descripción</label>
+        <textarea id="field-descripcion" name="descripcion" rows="3" placeholder="Notas opcionales..."></textarea>
 
-      <div class="modal-actions">
-        <button id="delete-btn" class="btn btn-danger" type="button" hidden>Eliminar</button>
-        <button id="cancel-btn" class="btn btn-secondary" type="button">Cancelar</button>
-        <button class="btn btn-primary" type="submit">Guardar</button>
-      </div>
-    </form>
-  </dialog>
+        <div class="modal-actions">
+          <button id="delete-btn" class="btn btn-danger" type="button" hidden>Eliminar</button>
+          <button id="cancel-btn" class="btn btn-secondary" type="button">Cancelar</button>
+          <button class="btn btn-primary" type="submit">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script src="js/db.js"></script>
   <script src="js/platform.js"></script>

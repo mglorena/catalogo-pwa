@@ -1,46 +1,85 @@
-const { addLink, updateLink, deleteLink, getAllLinks } = window.CatalogoDB;
+const { addLink, updateLink, deleteLink, getAllLinks, getAllCategories, ensureCategory } = window.CatalogoDB;
 const { detectPlatform, extractUrlFromText } = window.CatalogoPlatform;
+
+const NEW_CATEGORY_VALUE = '__new__';
 
 const els = {
   list: document.getElementById('list'),
   empty: document.getElementById('empty-state'),
   search: document.getElementById('search'),
+  chips: document.getElementById('category-chips'),
   fab: document.getElementById('fab-add'),
   modal: document.getElementById('modal'),
   form: document.getElementById('link-form'),
   formTitle: document.getElementById('form-title'),
   url: document.getElementById('field-url'),
   platformBadge: document.getElementById('platform-badge'),
-  tema: document.getElementById('field-tema'),
+  temaSelect: document.getElementById('field-tema-select'),
+  temaNew: document.getElementById('field-tema-new'),
   descripcion: document.getElementById('field-descripcion'),
   cancelBtn: document.getElementById('cancel-btn'),
   deleteBtn: document.getElementById('delete-btn'),
+  errorBanner: document.getElementById('error-banner'),
 };
 
 let allLinks = [];
+let allCategories = [];
 let editingId = null;
+let activeCategory = null;
 
 function init() {
   registerServiceWorker();
   bindEvents();
   handleSharedData();
+  refreshCategories();
   loadAndRender();
 }
 
-async function loadAndRender() {
-  allLinks = await getAllLinks();
-  render(els.search.value.trim().toLowerCase());
+function showError(message, err) {
+  console.error(message, err || '');
+  if (!els.errorBanner) return;
+  els.errorBanner.textContent = `⚠️ ${message}`;
+  els.errorBanner.hidden = false;
 }
 
-function render(filter = '') {
-  const filtered = filter
-    ? allLinks.filter((l) =>
-        [l.descripcion, l.tema, l.plataforma, l.url]
-          .join(' ')
-          .toLowerCase()
-          .includes(filter)
-      )
-    : allLinks;
+async function loadAndRender() {
+  try {
+    allLinks = await getAllLinks();
+    render();
+  } catch (err) {
+    showError('No se pudieron cargar los enlaces guardados.', err);
+  }
+}
+
+async function refreshCategories() {
+  try {
+    allCategories = await getAllCategories();
+    renderCategoryChips();
+    renderCategorySelect();
+  } catch (err) {
+    showError('No se pudieron cargar las categorías.', err);
+  }
+}
+
+function currentFilter() {
+  return els.search.value.trim().toLowerCase();
+}
+
+function render() {
+  const filterText = currentFilter();
+  let filtered = allLinks;
+
+  if (activeCategory) {
+    filtered = filtered.filter((l) => (l.tema || 'Sin categoría') === activeCategory);
+  }
+  if (filterText) {
+    filtered = filtered.filter((l) =>
+      [l.descripcion, l.tema, l.plataforma, l.url]
+        .join(' ')
+        .toLowerCase()
+        .includes(filterText)
+    );
+  }
 
   els.list.innerHTML = '';
 
@@ -48,7 +87,7 @@ function render(filter = '') {
     els.empty.hidden = false;
     els.empty.textContent = allLinks.length === 0
       ? 'Todavía no guardaste ningún enlace. Tocá "+" para agregar el primero.'
-      : 'No hay resultados para esa búsqueda.';
+      : 'No hay resultados con ese filtro.';
     return;
   }
   els.empty.hidden = true;
@@ -71,6 +110,55 @@ function render(filter = '') {
     section.appendChild(ul);
     els.list.appendChild(section);
   }
+}
+
+function renderCategoryChips() {
+  els.chips.innerHTML = '';
+  if (allCategories.length === 0) return;
+
+  for (const cat of allCategories) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip' + (activeCategory === cat.nombre ? ' chip-active' : '');
+    chip.textContent = cat.nombre;
+    chip.addEventListener('click', () => {
+      activeCategory = activeCategory === cat.nombre ? null : cat.nombre;
+      renderCategoryChips();
+      render();
+    });
+    els.chips.appendChild(chip);
+  }
+}
+
+function renderCategorySelect(selectedValue) {
+  els.temaSelect.innerHTML = '';
+
+  for (const cat of allCategories) {
+    const opt = document.createElement('option');
+    opt.value = cat.nombre;
+    opt.textContent = cat.nombre;
+    els.temaSelect.appendChild(opt);
+  }
+
+  const newOpt = document.createElement('option');
+  newOpt.value = NEW_CATEGORY_VALUE;
+  newOpt.textContent = '+ Nueva categoría...';
+  els.temaSelect.appendChild(newOpt);
+
+  if (selectedValue && allCategories.some((c) => c.nombre === selectedValue)) {
+    els.temaSelect.value = selectedValue;
+  } else if (allCategories.length > 0) {
+    els.temaSelect.value = allCategories[0].nombre;
+  } else {
+    els.temaSelect.value = NEW_CATEGORY_VALUE;
+  }
+  syncNewCategoryInput();
+}
+
+function syncNewCategoryInput() {
+  const isNew = els.temaSelect.value === NEW_CATEGORY_VALUE;
+  els.temaNew.hidden = !isNew;
+  if (isNew) els.temaNew.focus();
 }
 
 function groupByTema(items) {
@@ -110,11 +198,13 @@ function escapeHtml(str) {
 }
 
 function bindEvents() {
-  els.search.addEventListener('input', () => render(els.search.value.trim().toLowerCase()));
+  els.search.addEventListener('input', render);
 
   els.fab.addEventListener('click', () => openAddModal());
 
-  els.url.addEventListener('input', () => updatePlatformBadge());
+  els.url.addEventListener('input', updatePlatformBadge);
+
+  els.temaSelect.addEventListener('change', syncNewCategoryInput);
 
   els.cancelBtn.addEventListener('click', closeModal);
 
@@ -122,13 +212,21 @@ function bindEvents() {
     if (e.target === els.modal) closeModal();
   });
 
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !els.modal.hidden) closeModal();
+  });
+
   els.form.addEventListener('submit', onSubmit);
 
   els.deleteBtn.addEventListener('click', async () => {
     if (editingId && confirm('¿Eliminar este enlace?')) {
-      await deleteLink(editingId);
-      closeModal();
-      loadAndRender();
+      try {
+        await deleteLink(editingId);
+        closeModal();
+        loadAndRender();
+      } catch (err) {
+        showError('No se pudo eliminar el enlace.', err);
+      }
     }
   });
 }
@@ -138,18 +236,18 @@ function updatePlatformBadge() {
   els.platformBadge.textContent = `${p.icon} ${p.label}`;
 }
 
-function openAddModal(prefillUrl = '') {
+function openAddModal(prefillUrl = '', prefillDescripcion = '') {
   editingId = null;
   els.formTitle.textContent = 'Nuevo enlace';
   els.deleteBtn.hidden = true;
   els.form.reset();
   els.url.value = prefillUrl;
+  els.descripcion.value = prefillDescripcion;
+  renderCategorySelect();
   updatePlatformBadge();
-  els.modal.showModal();
+  openModal();
   if (!prefillUrl) {
     els.url.focus();
-  } else {
-    els.tema.focus();
   }
 }
 
@@ -158,38 +256,61 @@ function openEditModal(item) {
   els.formTitle.textContent = 'Editar enlace';
   els.deleteBtn.hidden = false;
   els.url.value = item.url;
-  els.tema.value = item.tema;
   els.descripcion.value = item.descripcion;
+  renderCategorySelect(item.tema);
   updatePlatformBadge();
-  els.modal.showModal();
+  openModal();
+}
+
+function openModal() {
+  els.modal.hidden = false;
+  document.body.style.overflow = 'hidden';
 }
 
 function closeModal() {
-  els.modal.close();
+  els.modal.hidden = true;
+  document.body.style.overflow = '';
   editingId = null;
 }
 
 async function onSubmit(e) {
   e.preventDefault();
-  const url = els.url.value.trim();
-  if (!url) return;
+  try {
+    const url = els.url.value.trim();
+    if (!url) return;
 
-  const platform = detectPlatform(url);
-  const data = {
-    url,
-    plataforma: platform.id,
-    tema: els.tema.value.trim() || 'Sin categoría',
-    descripcion: els.descripcion.value.trim(),
-  };
+    let tema;
+    if (els.temaSelect.value === NEW_CATEGORY_VALUE) {
+      const nuevaCategoria = els.temaNew.value.trim();
+      if (!nuevaCategoria) {
+        els.temaNew.focus();
+        return;
+      }
+      tema = await ensureCategory(nuevaCategoria);
+    } else {
+      tema = els.temaSelect.value;
+    }
 
-  if (editingId) {
-    await updateLink(editingId, data);
-  } else {
-    await addLink(data);
+    const platform = detectPlatform(url);
+    const data = {
+      url,
+      plataforma: platform.id,
+      tema: tema || 'Sin categoría',
+      descripcion: els.descripcion.value.trim(),
+    };
+
+    if (editingId) {
+      await updateLink(editingId, data);
+    } else {
+      await addLink(data);
+    }
+
+    closeModal();
+    await refreshCategories();
+    await loadAndRender();
+  } catch (err) {
+    showError('No se pudo guardar el enlace. Probá de nuevo.', err);
   }
-
-  closeModal();
-  loadAndRender();
 }
 
 // Cuando la app se abre como Share Target de Android, la URL compartida
@@ -203,24 +324,33 @@ function handleSharedData() {
   const raw = sharedUrl || sharedText || sharedTitle;
   if (!raw) return;
 
+  console.log('Datos recibidos por share target:', { sharedTitle, sharedText, sharedUrl });
+
   const url = extractUrlFromText(raw);
+
+  // Si el título no quedó adentro de la URL detectada, lo usamos como
+  // descripción inicial (muchas apps mandan el nombre del posteo ahí).
+  const descripcion = sharedTitle && sharedTitle !== url ? sharedTitle : '';
 
   // Limpiamos la URL para no reabrir el modal si el usuario recarga.
   window.history.replaceState({}, document.title, window.location.pathname);
 
   if (url) {
-    openAddModal(url);
+    openAddModal(url, descripcion);
   }
 }
 
 function registerServiceWorker() {
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch((err) => {
-        console.error('Error registrando el Service Worker:', err);
-      });
-    });
-  }
+  if (!('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .then((reg) => console.log('Service Worker registrado', reg.scope))
+      .catch((err) => showError('No se pudo registrar el modo offline.', err));
+  });
 }
 
-init();
+try {
+  init();
+} catch (err) {
+  showError('La app no pudo iniciar correctamente.', err);
+}

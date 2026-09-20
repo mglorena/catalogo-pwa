@@ -1,4 +1,4 @@
-const CACHE_NAME = 'catalogo-cache-v1';
+const CACHE_NAME = 'catalogo-cache-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -36,11 +36,18 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
 
   // Navegaciones (incluye el share target con ?title=&text=&url=):
-  // siempre servimos el index.html cacheado, ignorando la query string,
-  // para que compartir un link funcione incluso sin conexión.
+  // red primero, para que las actualizaciones de la app lleguen enseguida.
+  // Si no hay conexión, caemos al index.html cacheado (ignorando la query
+  // string) para que abrir/compartir siga funcionando offline.
   if (req.mode === 'navigate') {
     event.respondWith(
-      caches.match('./index.html').then((cached) => cached || fetch(req))
+      fetch(req)
+        .then((res) => {
+          const resClone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', resClone));
+          return res;
+        })
+        .catch(() => caches.match('./index.html'))
     );
     return;
   }
